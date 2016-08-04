@@ -79,7 +79,9 @@ impl<S, T, E> Task for Server<S, T>
                             self.run = false;
                             break;
                         }
-                        _ => unimplemented!(),
+                        Frame::Error(_) => {
+                            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "An error occurred."));
+                        }
                     }
                 }
                 Ok(None) => break,

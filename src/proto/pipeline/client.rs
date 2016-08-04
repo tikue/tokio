@@ -84,7 +84,7 @@ impl<T, U, E> Clone for ClientHandle<T, U, E>
 }
 
 impl<T, E> Task for Client<T, E>
-    where T: Transport,
+    where T: Transport<Error = E>,
           E: Send + 'static,
 {
     fn tick(&mut self) -> io::Result<Tick> {
@@ -104,10 +104,17 @@ impl<T, E> Task for Client<T, E>
                             let c = self.in_flight.remove(0);
                             c.complete(resp);
                         }
+                        Frame::Error(e) => {
+                            if !self.in_flight.is_empty() {
+                                let c = self.in_flight.remove(0);
+                                c.error(e);
+                            } else {
+                                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "An error occurred."));
+                            }
+                        }
                         Frame::Done => {
                             unimplemented!();
                         }
-                        _ => unimplemented!(),
                     }
                 }
                 Ok(None) => break,

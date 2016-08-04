@@ -491,7 +491,9 @@ impl EventLoop {
                         trace!("current task made progress");
                     }
                     Err(_) => {
-                        unimplemented!();
+                        debug!("finalizing task; token={:?}", token);
+                        task_shutdown = true;
+                        break;
                     }
                 }
             }
