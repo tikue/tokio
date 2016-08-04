@@ -85,7 +85,7 @@ impl<S, T, E> Task for Server<S, T>
                     }
                 }
                 Ok(None) => break,
-                Err(_) => unimplemented!(),
+                Err(e) => panic!(e.to_string()),
             }
         }
 
