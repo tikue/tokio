@@ -5,11 +5,12 @@ use simple::LiftProto;
 
 use std::io;
 
-use streaming::{self, Message};
+use streaming::{self, Body, Message};
 use streaming::multiplex::StreamingMultiplex;
 use tokio_core::reactor::Handle;
 use tokio_service::Service;
 use futures::{stream, Stream, Sink, Future, IntoFuture, Poll};
+use util::client_proxy;
 
 type MyStream<E> = stream::Empty<(), E>;
 
@@ -56,7 +57,7 @@ impl<T: 'static, P: ClientProto<T>> BindClient<Multiplex, T> for P {
     type ServiceResponse = P::Response;
     type ServiceError = io::Error;
 
-    type BindClient = ClientService<T, P>;
+    type BindClient = ClientService<P::Request, P::Response>;
 
     fn bind_client(&self, handle: &Handle, io: T) -> Self::BindClient {
         ClientService {
@@ -86,25 +87,30 @@ impl<T, P> streaming::multiplex::ClientProto<T> for LiftProto<P> where
     }
 }
 
+type ClientProxy<Request, Response> =
+    client_proxy::ClientProxy<Message<Request, MyStream<io::Error>>,
+                              Message<Response, Body<(), io::Error>>,
+                              io::Error>;
+
 /// Client `Service` for simple multiplex protocols
-pub struct ClientService<T, P> where T: 'static, P: ClientProto<T> {
-    inner: <LiftProto<P> as BindClient<StreamingMultiplex<MyStream<io::Error>>, T>>::BindClient
+pub struct ClientService<Request, Response> {
+    inner: ClientProxy<Request, Response>,
 }
 
-impl<T, P> Service for ClientService<T, P> where T: 'static, P: ClientProto<T> {
-    type Request = P::Request;
-    type Response = P::Response;
+impl<Request, Response> Service for ClientService<Request, Response> {
+    type Request = Request;
+    type Response = Response;
     type Error = io::Error;
-    type Future = ClientFuture<T, P>;
+    type Future = ClientFuture<Request, Response>;
 
-    fn call(&self, req: P::Request) -> Self::Future {
+    fn call(&self, req: Request) -> Self::Future {
         ClientFuture {
             inner: self.inner.call(Message::WithoutBody(req))
         }
     }
 }
 
-impl<T, P> Clone for ClientService<T, P> where T: 'static, P: ClientProto<T> {
+impl<Request, Response> Clone for ClientService<Request, Response> {
     fn clone(&self) -> Self {
         ClientService {
             inner: self.inner.clone(),
@@ -112,13 +118,12 @@ impl<T, P> Clone for ClientService<T, P> where T: 'static, P: ClientProto<T> {
     }
 }
 
-pub struct ClientFuture<T, P> where T: 'static, P: ClientProto<T> {
-    inner: <<LiftProto<P> as BindClient<StreamingMultiplex<MyStream<io::Error>>, T>>::BindClient
-            as Service>::Future
+pub struct ClientFuture<Request, Response> {
+    inner: <ClientProxy<Request, Response> as Service>::Future
 }
 
-impl<T, P> Future for ClientFuture<T, P>  where T: 'static, P: ClientProto<T> {
-    type Item = P::Response;
+impl<Request, Response> Future for ClientFuture<Request, Response> {
+    type Item = Response;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
